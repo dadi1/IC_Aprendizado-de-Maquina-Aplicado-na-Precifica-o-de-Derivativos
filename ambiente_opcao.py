@@ -9,7 +9,7 @@ class AmbienteOpcao(gym.Env):
     e hedge de uma opção europeia.
     """
 
-    def __init__(self, S0, K, r, sigma, T):
+    def __init__(self, S0=100, K=100, r=0.05, sigma=0.2, T=30):
 
         # --- Parâmetros da Simulação ---
         self.S0 = S0 # Preço inicial do ativo.
