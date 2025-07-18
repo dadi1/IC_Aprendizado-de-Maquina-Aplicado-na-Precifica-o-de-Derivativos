@@ -10,6 +10,7 @@ class AmbienteOpcao(gym.Env):
     """
 
     def __init__(self, S0=100, K=100, r=0.05, sigma=0.2, T=30):
+        super(AmbienteOpcao, self).__init__()
 
         # --- Parâmetros da Simulação ---
         self.S0 = S0 # Preço inicial do ativo.
@@ -20,27 +21,27 @@ class AmbienteOpcao(gym.Env):
 
         # --- Definição dos Espaço de Ação e Observação. ---
         # Ações: 0=vender, 1=Manter, 2=Comprar unidade do ativo para hedge.
-        self.acition_space = spaces.Discrete(3)
+        self.action_space = spaces.Discrete(3)
 
         self.num_price_bins = 100
         self.price_bins = np.linspace(self.S0 * 0.5, self.S0 * 1.5, self.num_price_bins)
 
-        self.observation_space = spaces.MultiDiscrete([self.num_price_bins, self.T_days + 1])
+        self.observation_space = spaces.MultiDiscrete([self.num_price_bins, self.T + 1])
 
 
         # --- Configuração do Processo de Simulação (QuantLib) ---
         self.timestep = 1
         self.day_count = ql.Actual365Fixed()
-        self.calender = ql.Brazil()
+        self.calendar = ql.Brazil()
         
-        self.calculation_date = self.calender.adjust(ql.Date.todaysDate())
-        ql.Setting.instance().evaluationDate = self.calculation_date
+        self.calculation_date = self.calendar.adjust(ql.Date.todaysDate())
+        ql.Settings.instance().evaluationDate = self.calculation_date
 
-        # TODO: Configura os processo de BSM aqui.
+        
         spot_handle = ql.QuoteHandle(ql.SimpleQuote(self.S0))
         risk_free_rate = ql.FlatForward(self.calculation_date, self.r, self.day_count)
         rate_ts = ql.YieldTermStructureHandle(risk_free_rate)
-        volatility = ql.BlackConstantVol(self.calculation_date, self.calender, self.sigma, self.day_count)
+        volatility = ql.BlackConstantVol(self.calculation_date, self.calendar, self.sigma, self.day_count)
         vol_ts = ql.BlackVolTermStructureHandle(volatility)
 
         self.bsm_process = ql.BlackScholesMertonProcess(spot_handle, rate_ts, rate_ts, vol_ts)
@@ -52,7 +53,9 @@ class AmbienteOpcao(gym.Env):
 
     def _get_obs(self):
         """Retorna a observação do estado atual.""" 
-        price = self.stock_path[self.current_step]
+        price_idx = min(self.current_step, len(self.stock_path) - 1)
+        price = self.stock_path[price_idx]
+
         time_to_maturity = self.T - self.current_step
 
         price_bin = np.digitize(price, self.price_bins) - 1
@@ -64,51 +67,58 @@ class AmbienteOpcao(gym.Env):
 
     def _get_info(self):
         "Retorna informações auxiliares sobre o ambiente."
-        
-        return {"current_price": self.stock_path[self.current_step]}
+        price_idx = min(self.current_step, len(self.stock_path) - 1)
+        return {"current_price": self.stock_path[price_idx]}
 
     def reset(self, seed=None, option=None):
+        super().reset(seed=seed)
+
         """Reseta o ambiente para um estado inicial."""
         times = np.linspace(0.0, self.T / 365.0, self.T + 1)
         time_grid = ql.TimeGrid(list(times), len(times))
 
         # Gerador de números aleatórios.
-        rng = ql.GaussianRandomSequenceGenerator(ql.UniformRandomGenrator(self.T, ql.UniformRandomGenerator(seed=np.random.randint(0,1000))))
+        rng = ql.GaussianRandomSequenceGenerator(ql.UniformRandomSequenceGenerator(self.T, ql.UniformRandomGenerator(seed=np.random.randint(0,1000))))
         path_generator = ql.GaussianPathGenerator(self.bsm_process, time_grid, rng, False)
 
         path = path_generator.next().value()
+        self.stock_path = np.array(list(path))
 
         # reset do estado interno.
         self.current_step = 0
 
-        observation = self.get_obs()
+        observation = self._get_obs()
         info = self._get_info()
 
         return observation, info
     
     def step(self, action):
         """Executa um passo no ambiente a partir de uma ação."""
-        self.currente_step += 1
-
-        # verifica se o evento terminou.
+        
+        # 1. Verifica se o episódio JÁ está no fim ANTES de fazer qualquer coisa.
+        # A última ação possível é no penúltimo dia (T-1).
         terminated = self.current_step >= self.T
 
-        # Lógica de recompensa
-        # Recompensa é calculada com base nos custos de hedge.
-        # Por enquanto, a recompensa é apenas calculada no final do evento.
-        reward = 0
         if terminated:
-            # No final a recompensa é baseada no payoff da opção
+            # Se já terminou, não faz sentido executar um novo passo.
+            # Apenas retornamos a observação final com recompensa 0.
+            # Isso evita que o 'current_step' seja incrementado além do limite.
+            return self._get_obs(), 0, True, False, self._get_info()
+
+        # 2. Se não terminou, avança para o próximo dia.
+        self.current_step += 1
+        
+        # 3. Calcula a recompensa. Ela é dada apenas no passo final.
+        reward = 0
+        # A verificação de terminação agora é se o NOVO passo é o final.
+        if self.current_step >= self.T:
             final_price = self.stock_path[self.current_step]
             payoff = max(final_price - self.K, 0)
-
-            # A recompensa será o inverso do payoff.
-            reward = - payoff
+            reward = -payoff
         
         observation = self._get_obs()
         info = self._get_info()
-        truncated = False # Não há truncamento.
+        truncated = False
 
-
-        return observation, reward, terminated, truncated, info
-    
+        # O episódio termina se o passo atual for o último dia.
+        return observation, reward, self.current_step >= self.T, truncated, info
