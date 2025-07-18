@@ -19,6 +19,14 @@ class AmbienteOpcao(gym.Env):
         self.sigma = sigma # Volatilidade do ativo.
         self.T = T # tempo até o vencimento em dias.
 
+        self.transaction_cost = 0.001 # 1% sobre o valor de transição.
+
+        # Posição começa zerada.
+        self.stock_position = 0
+
+        # Caixa começa zerado.
+        self.cash_balance = 0
+
         # --- Definição dos Espaço de Ação e Observação. ---
         # Ações: 0=vender, 1=Manter, 2=Comprar unidade do ativo para hedge.
         self.action_space = spaces.Discrete(3)
@@ -105,16 +113,41 @@ class AmbienteOpcao(gym.Env):
             # Isso evita que o 'current_step' seja incrementado além do limite.
             return self._get_obs(), 0, True, False, self._get_info()
 
-        # 2. Se não terminou, avança para o próximo dia.
+        # 2. Pega o preço atual antes de avançar no tempo.
+        current_price = self.stock_path[self.current_step]
+
+        # 3. Executa a ação do agente no portifólio.
+        if action == 2: # Ação de Compra.
+            self.stock_position += 1
+            self.cash_balance -= current_price * (1 + self.transaction_cost)
+        elif action == 0: # Ação de venda.
+            self.stock_position -= 1
+            self.cash_balance += current_price * (1 - self.transaction_cost)
+
+        # 4. Se não terminou, avança para o próximo dia.
         self.current_step += 1
-        
-        # 3. Calcula a recompensa. Ela é dada apenas no passo final.
+
+        # 5. Recompensa só é dada no final do episódio.
         reward = 0
+
         # A verificação de terminação agora é se o NOVO passo é o final.
         if self.current_step >= self.T:
+
+            # Preço final da posição.
             final_price = self.stock_path[self.current_step]
-            payoff = max(final_price - self.K, 0)
-            reward = -payoff
+
+            # Liquida a posição em ações e soma ao caixa.
+            final_portfolio_value = self.cash_balance + self.stock_position * final_price
+
+            # Calcula o Payoff da opção. 
+            option_payoff = max(final_price - self.K, 0)
+            
+            # O objetivo é encontrar o valor do portfólio seja igual ao payoff.
+            # A diferença é o erro de hedge.
+            hedge_pnl = final_portfolio_value + option_payoff
+            
+            # Recompensas negativas penalizam o desvio.
+            reward = -(hedge_pnl**2)
         
         observation = self._get_obs()
         info = self._get_info()
