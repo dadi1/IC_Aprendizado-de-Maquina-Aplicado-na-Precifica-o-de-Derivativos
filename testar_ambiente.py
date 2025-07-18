@@ -1,7 +1,13 @@
 from ambiente_opcao import AmbienteOpcao
+from dicionario_acao import *
+
+# Escolher os valores para a simulação do ambiente.
+S0 = 100 # Preço inicial
+K = 100
+T = 30
 
 # Instância de simulação do ambiente.
-env = AmbienteOpcao(S0=100, K=100, T=365)
+env = AmbienteOpcao(S0, K, T)
 
 # Reseta o ambiente par o inicio de um episódio.
 observation, info = env.reset()
@@ -22,7 +28,7 @@ while not done:
     done = terminated or truncated
     total_reward += reward
 
-    print(f"Passo: {env.current_step}, Ação: {action}, Estado: {observation}, Recompensa: {reward:.2f}, Info: {info}")
+    print(f"Passo: {env.current_step}, Ação: {estados_de_acoes[action]}, Estado: {observation}, Recompensa: {reward:.2f}, Info: {info}")
 
 print(f"\n Simulação finalizada! Recompensa Total: {total_reward:.2f}")
 
