@@ -24,8 +24,8 @@ agente = AgenteQLBS(
     epsilon=EPSILON,
     epsilon_decay=EPSILON_DECAY,
     min_epsilon=MIN_EPSILON,
-    observation_space_dims=env.observation_space,
-    action_space_size=env.action_space
+    observation_space_dims=env.observation_space.nvec,
+    action_space_size=env.action_space.n
 )
 
 # List que armazena as recompensas totai de cada episódio para plotagem.
@@ -64,7 +64,7 @@ for episode in range(EPISODES):
     # Imprime o progresso a cada 1000 episódios
     if (episode + 1) % 1000 == 0:
         avg_reward = np.mean(total_rewards[-1000:])
-        print(f"Episódio: {episode + 1}/{EPISODES} | Recompensa Média (últimos 1000): {avg_reward:.2f} | Epsilon: {agent.epsilon:.4f}")
+        print(f"Episódio: {episode + 1}/{EPISODES} | Recompensa Média (últimos 1000): {avg_reward:.2f} | Epsilon: {agente.epsilon:.4f}")
 
 print("\nTreinamento concluído!")
 
